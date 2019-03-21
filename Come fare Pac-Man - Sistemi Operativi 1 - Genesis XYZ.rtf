@@ -1,0 +1,168 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1138
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww21640\viewh16480\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural
+
+\f0\b\fs24 \cf0 Genesis XYZ - Damiano Collu - Guida parziale
+\b0  \
+\
+Versione 1 (processi):\
+\
+Dividere il programma in processi, ciascun oggetto che si muove deve essere un processo (Pac-Man \'e8 un processo e ciascun fantasma ha un proprio processo).\
+\
+In tutto si hanno (mettiamo che i fantasmi sono 4), 6 processi (5 + 1 che \'e8 il main).\
+\
+
+\b Creazione di un processo
+\b0 :\
+\
+Un processo si crea con l'istruzione fork();\
+Esempio:\
+\
+#include <unistd.h>\
+#include <sys/types.h>\
+\
+...\
+\
+pid_t fantasma1 = fork();\
+\
+//Se il processo creato esce da questo IF (nel caso entri) inizier\'e0 a eseguire codice che non li appartiene\
+//il modo pi\'f9 semplice per evitare questo \'e8 mettere come ultima istruzione exit(1); oppure mettere tutto il codice in un while(1) \{ /*ciclo infinito*/ \} e aspettare che un altro processo lo chiuda.\
+if (fantasma1 == 0) \{\
+\
+	//Sei dentro il nuovo processo, qui \'e8 come se fosse un altro main\
+	//qui dentro (in questo caso) metterai tutte le cose che appartengono al fantasma1\
+\}\
+\
+else if (fantasma1 == ERR) \{\
+\
+	//non capita praticamente mai per\'f2 la creazione del nuovo processo potrebbe fallire\
+	//qui si potrebbe chiudere il programma o riprovare fork(), meglio per\'f2 chiuderlo con exit(1);\
+	\
+	exit(1);\
+\}\
+\
+//uccide un processo con un segnale, si usa di solito in questi casi SIGHUP scrivendo 1, questo manda un segnale di hangup e il processo si chiude.\
+kill(fantasma1, 1);\
+\
+
+\b Come invio dati da un processo ad un altro?\
+\
+
+\b0 Per inviare dati da un processo A ad uno B bisogna usare le pipes.\
+\
+Una pipe si inizializza nel main e bisogna chiudere in lettura o scrittura un "lato" di questa in base allo scopo.\
+Esempio:\
+\
+//Una pipe necessit\'e0 di un array di 2 elementi (int)\
+int buffer[2];\
+	\
+//Nel caso fallisca nella creazione chiudiamo direttamente il programma.\
+if (pipe(buffer) == ERR) \{\
+	\
+	perror("Errore nella creazione della pipe.");\
+	exit(1);\
+\}\
+\
+...\
+\
+pid_t fantasma1 = fork();\
+\
+if (fantasma1 == 0) \{\
+\
+	//Questa funzione chiude un "lato" della pipe, mettiamo il caso che questo processo abbia bisogno di scrivere sulla pipe\
+	//allora nel parametro ci sar\'e0 il primo elemento dell'array (l'elemento 0)\
+	//se questo nuovo processo ha bisogno di leggere dalla pipe, si il secondo elemento (buffer[1])\
+	close(buffer[0]);\
+	\
+	//Mettiamo il caso che il fantasma1 abbia scritto il suo codice che deve eseguire per tutta la durata del programma su una funzione\
+	//questa funzione prende come parametri (per esempio) il nome e "lato" della pipe che gli interessa, in questo caso il secondo elemento\
+	//in buffer[1] si pu\'f2 scrivere, in buffer[0] si legge\
+	funzione_fantasma1(struct_fantasma1.nome, buffer[1]);\
+\}\
+\
+
+\b IMPORTANTE: 
+\b0 non bisogna mai chiudere la pipe nel main prima di creare un processo, la creazione di un nuovo processo \'e8 una copia del processo che lo genera, quindi se un processo A crea un processo B e in A abbiamo gi\'e0 fatto qualcosa, queste modifiche si trasferiscono a B (quelle successive in B non vanno in A).\
+\
+
+\b Leggere e scrivere da una pipe (ATTENZIONE, come la funzione scanf(); questa blocca il processo finche non riceve un input, in sintesi blocca il thread)
+\b0  :\
+\
+Per la lettura si usa:\
+Esempio:\
+\
+//La funzione read ha 3 parametri:\
+//il primo \'e8 il "lato" della pipe da usare (quindi il primo dell'array, quello dove si legge)\
+//il secondo \'e8 un puntatore ad una variabile da utilizzare per scrivere il valore letto: per esempio si scrive &variabile, gli si passa la locazione di memoria.\
+//il terzo \'e8 un numero intero che indica la dimensione in byte del dato da leggere (si pu\'f2 usare sizeof() per identificare la grandezza di una variabile)\
+//per esempio se il dato \'e8 una struct (definita da qualche parte) per il terzo parametro si pu\'f2 scrivere: sizeof(struct dato)\
+//dove "dato" \'e8 la struct e sizeof ci restituir\'e0 la grandezza in byte di quella struct.\
+if (read(buffer[0], &variabile_in_cui_inserire_il_valore_letto, sizeof(dimensione_elemento_da_leggere)) != ERR) \{\
+		\
+	//il dato \'e8 stato letto\
+\}\
+	\
+else \{\
+		\
+	//il dato non \'e8 stato letto\
+\}\
+\
+La funzione write \'e8 analoga:\
+Esempio:\
+write(buffer[1], &variabile_contenente_i_dati_da_scrivere, sizeof(struct dato));\
+\
+
+\b Come usare ncurses per la gestione della grafica?\
+\
+
+\b0 Esempio:\
+\
+#include <ncurses.h>\
+\
+...\
+\
+//inizializza ncurses, dopo questa funzione bisogna assicurarsi che il programma quando verr\'e0 chiuso eseguir\'e0 endwin();\
+initscr();\
+//nasconde il cursore sul terminale\
+curs_set(0);\
+//Utile per poter utilizzare alcuni DEFINE di ncurses come KEY_UP (se si vuole identificare il tasto "freccia su" per esempio)\
+keypad(stdscr, TRUE);\
+//nasconde l'output su pressione di un tasto, per esempio usando getch(); per l'input di un tasto, il tasto premuto non verr\'e0 visualizzato.\
+noecho();\
+//avvia la modalit\'e0 per poter utilizzare i colori\
+start_color();\
+\
+//definisce il colore 1 con nel primo parametro il nome del colore (che \'e8 un numero), il colore del testo nel secondo parametro e il colore di sfondo nel terzo.\
+\pard\tx560\pardeftab560\pardirnatural
+\cf0 init_pair(1, COLOR_YELLOW, COLOR_BLACK);\
+\
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural
+\cf0 //attiva il colore 1 su tutto il terminale, qualsiasi cosa venga scritta con mvaddch o simili verr\'e0 colorata in quella maniera.\
+attron(COLOR_PAIR(1));\
+mvaddch(posizione_in_caratteri_in_verticale, posizione_in_caratteri_in_orizzontale, carattere_da_disegnare);\
+//esempio, disegna un punto al centro nella posizione (x,y) = (5;10)\
+mvaddch(5, 10, ACS_BULLET);\
+//oppure disegna una "X"\
+mvaddch(5, 10, 'X');\
+//disattiva il colore 1\
+attroff(COLOR_PAIR(1));\
+\
+mvprintw(0, 0, "Questa funzione scrive una frase a partire da un punto prescelto.").\
+\
+//nessuna modifica visuale verr\'e0 mostrata finche non si richiama questa funzione che aggiorna lo schermo mostrando le modifiche.\
+refresh();\
+\
+//da chiamare a fine programma o comunque prima che il programma arrivi ad un istruzione di fine esecuzione.\
+endwin();\
+\
+
+\b NOTE PER CREARE PAC-MAN
+\b0 :\
+\
+Il labirinto non pu\'f2 essere una variabile globale (sarebbe leggibile solo in lettura nella versione a processi e comunque questa non \'e8 una buona pratica)\
+Il labirinto potrebbe essere creato sul main che sar\'e0 l'unico a sapere come \'e8 fatto e quindi in base a quello che i fantasmi decidono di fare (magari muoversi)\
+scrivendo sulla pipe, il main pu\'f2 leggere tali informazioni e controllare se il movimento \'e8 fattibile (collisioni) e muovere cos\'ec l'elemento.\
+I processi che scrivono sulla pipe per i fantasmi e il processo che aspetta l'input per "muovere" Pac-Man devono essere dentro un ciclo infinito\
+\'e8 il modo pi\'f9 facile per gestirli dato che sar\'e0 il main che in certe condizioni decider\'e0 che il gioco \'e8 finito e quindi chiuder\'e0 lui i vari processi e terminer\'e0 il programma.}
